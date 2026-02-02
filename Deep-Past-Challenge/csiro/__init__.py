@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from . import amp, config, data, losses, metrics, model, train, transforms  # noqa: F401
+from . import amp, config, data, losses, metrics, train  # noqa: F401
 
 __all__ = [
     "amp",
@@ -8,7 +8,5 @@ __all__ = [
     "data",
     "losses",
     "metrics",
-    "model",
     "train",
-    "transforms",
 ]

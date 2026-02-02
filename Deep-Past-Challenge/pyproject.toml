@@ -11,12 +11,11 @@ requires-python = ">=3.9"
 dependencies = [
   "numpy",
   "pandas",
-  "Pillow",
-  "scikit-learn",
   "tqdm",
-  "matplotlib",
   "torch",
-  "torchvision",
+  "transformers",
+  "sacrebleu",
+  "sentencepiece",
 ]
 
 [project.optional-dependencies]
