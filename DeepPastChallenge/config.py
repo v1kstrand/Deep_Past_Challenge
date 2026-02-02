@@ -40,7 +40,7 @@ DEFAULTS: dict[str, Any] = dict(
     weight_decay=0.0,
     warmup_steps=0,
     grad_clip=1.0,
-    trainable_dtype="fp16",
+    trainable_dtype="bf16",
     # Logging / outputs
     log_every=50,
     eval_every=1,

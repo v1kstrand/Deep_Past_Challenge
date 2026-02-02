@@ -17,6 +17,8 @@ def autocast_context(
         use_dtype = config.parse_dtype(config.DEFAULTS["trainable_dtype"]) if dtype is None else dtype
         if isinstance(use_dtype, str):
             use_dtype = config.parse_dtype(use_dtype)
+        if use_dtype == torch.float32:
+            return nullcontext()
         return torch.amp.autocast(device_type="cuda", dtype=use_dtype, enabled=True)
     return nullcontext()
 
