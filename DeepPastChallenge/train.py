@@ -9,7 +9,6 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from transformers import (
-    AdamW,
     AutoModelForSeq2SeqLM,
     AutoTokenizer,
     DataCollatorForSeq2Seq,
@@ -225,7 +224,7 @@ def run_training(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
     model.to(device)
 
     splits, train_loader, valid_loader, test_loader = build_dataloaders(cfg, tokenizer, model)
-    optimizer = AdamW(
+    optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=float(cfg["lr"]),
         weight_decay=float(cfg["weight_decay"]),
