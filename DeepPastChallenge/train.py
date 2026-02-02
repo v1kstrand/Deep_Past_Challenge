@@ -89,9 +89,10 @@ def build_dataloaders(cfg: dict[str, Any], tokenizer, model):
         num_workers=num_workers,
         collate_fn=collator,
     )
+    eval_bs = int(cfg.get("eval_batch_size") or cfg["batch_size"])
     valid_loader = DataLoader(
         valid_ds,
-        batch_size=int(cfg["eval_batch_size"]),
+        batch_size=eval_bs,
         shuffle=False,
         num_workers=num_workers,
         collate_fn=collator,
@@ -100,7 +101,7 @@ def build_dataloaders(cfg: dict[str, Any], tokenizer, model):
     if test_ds is not None:
         test_loader = DataLoader(
             test_ds,
-            batch_size=int(cfg["eval_batch_size"]),
+            batch_size=eval_bs,
             shuffle=False,
             num_workers=num_workers,
             collate_fn=collator,
