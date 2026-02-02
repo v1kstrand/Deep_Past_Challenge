@@ -80,7 +80,7 @@ def build_dataloaders(cfg: dict[str, Any], tokenizer, model):
             max_target_len=int(cfg["max_target_len"]),
         )
 
-    collator = DataCollatorForSeq2Seq(tokenizer, model=model, padding=True)
+    collator = DataCollatorForSeq2Seq(tokenizer, model=model, padding=True, return_tensors="pt")
     num_workers = int(cfg.get("num_workers") or default_num_workers())
     train_loader = DataLoader(
         train_ds,
@@ -164,6 +164,10 @@ def train_one_epoch(
         with autocast_context(device):
             outputs = model(**batch)
             loss = outputs.loss
+        if not torch.isfinite(loss):
+            tqdm.write("non-finite loss detected; skipping step")
+            optimizer.zero_grad(set_to_none=True)
+            continue
         scaler.scale(loss).backward()
         if grad_clip is not None:
             scaler.unscale_(optimizer)
