@@ -1,0 +1,29 @@
+#__pycache__/
+*.py[cod]
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+.ipynb_checkpoints/
+
+# data / weights
+#data/
+#datasets/
+#weights/
+*.pth
+*.pt
+*.ckpt
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+
+kaggle_CSIRO.ipynb
+__.ipynb
+res.txt
+preds_eda_outputs/
+kaggle_submission/
