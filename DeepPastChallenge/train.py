@@ -9,6 +9,7 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from transformers import (
+    AutoConfig,
     AutoModelForSeq2SeqLM,
     AutoTokenizer,
     DataCollatorForSeq2Seq,
@@ -37,7 +38,9 @@ def build_model_and_tokenizer(cfg: dict[str, Any]):
     model_name = str(cfg["model_name"])
     tokenizer_name = str(cfg.get("tokenizer_name") or model_name)
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_fast=True)
-    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+    config = AutoConfig.from_pretrained(model_name)
+    config.tie_word_embeddings = False
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name, config=config)
     return model, tokenizer
 
 

@@ -97,6 +97,9 @@ class TextTranslationDataset(Dataset):
                         return_tensors="pt",
                     )
             item["labels"] = labels["input_ids"].squeeze(0)
+        for k, v in list(item.items()):
+            if isinstance(v, np.ndarray):
+                item[k] = torch.from_numpy(v)
         return item
 
 
