@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "csiro-biomass"
+name = "deep-past-challenge"
 version = "0.1.0"
-description = "CSIRO Biomass Kaggle baseline (DINOv3 + MLP) with grouped CV"
+description = "Deep Past Initiative machine translation baseline"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
@@ -23,4 +23,4 @@ comet = ["comet-ml"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["csiro*"]
+include = ["DeepPastChallenge*"]

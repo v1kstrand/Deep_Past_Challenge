@@ -10,7 +10,7 @@ import yaml
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO_ROOT))
 
-from csiro.train import run_training  # noqa: E402
+from DeepPastChallenge.train import run_training  # noqa: E402
 
 BASE_ARGS_PATH = os.getenv("BASE_ARGS_PATH")
 
