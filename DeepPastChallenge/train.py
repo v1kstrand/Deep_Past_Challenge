@@ -154,28 +154,40 @@ def train_one_epoch(
     *,
     grad_clip: float | None,
     log_every: int,
+    trainable_dtype: str | None,
 ) -> float:
     model.train()
     total_loss = 0.0
     step = 0
+    use_amp = scaler.is_enabled() if scaler is not None else False
     for batch in tqdm(data_loader, desc="train", leave=False):
         step += 1
         batch = {k: v.to(device) for k, v in batch.items()}
-        with autocast_context(device):
+        with autocast_context(device, dtype=trainable_dtype):
             outputs = model(**batch)
             loss = outputs.loss
         if not torch.isfinite(loss):
             tqdm.write("non-finite loss detected; skipping step")
             optimizer.zero_grad(set_to_none=True)
             continue
-        scaler.scale(loss).backward()
+        if use_amp:
+            scaler.scale(loss).backward()
+        else:
+            loss.backward()
         if grad_clip is not None:
-            scaler.unscale_(optimizer)
+            if use_amp:
+                scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), float(grad_clip))
-        scaler.step(optimizer)
-        scaler.update()
+        step_skipped = False
+        if use_amp:
+            old_scale = scaler.get_scale()
+            scaler.step(optimizer)
+            scaler.update()
+            step_skipped = scaler.get_scale() < old_scale
+        else:
+            optimizer.step()
         optimizer.zero_grad(set_to_none=True)
-        if scheduler is not None:
+        if scheduler is not None and not step_skipped:
             scheduler.step()
         total_loss += float(loss.item())
         if log_every and step % int(log_every) == 0:
@@ -242,7 +254,7 @@ def run_training(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
         num_warmup_steps=int(cfg["warmup_steps"]),
         num_training_steps=total_steps,
     )
-    scaler = grad_scaler(device)
+    scaler = grad_scaler(device, dtype=cfg.get("trainable_dtype"))
 
     os.makedirs(str(cfg["output_dir"]), exist_ok=True)
     state = TrainState()
@@ -256,6 +268,7 @@ def run_training(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
             device,
             grad_clip=cfg.get("grad_clip"),
             log_every=int(cfg.get("log_every") or 0),
+            trainable_dtype=cfg.get("trainable_dtype"),
         )
         if int(cfg.get("eval_every") or 1) <= 0:
             continue
