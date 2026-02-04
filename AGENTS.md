@@ -30,9 +30,20 @@ I will control whether you write code using these flags:
 If a message includes **(no code)**, wait until I explicitly send **(code ok)** before you start implementing.
 
 ## 3) Plan-first implementation
-Even when I send **(code ok)**, do **not** start coding immediately.
-
 Process:
 - First, provide a **high-level implementation plan** (steps + files/functions to touch).
 - Then wait for my approval/adjustments.
-- Only after I approve the plan should you write or modify code.
+- Only after I approve the plan should you write or modify code. 
+
+## 4) Plan approved
+if I add PA (plan approved), you can go with code (don't need to wait for code ok here)
+PAP (plan approved -> push to github), push the latest update once you are done (with a simple comment)
+
+## 5) Lovable tickets workflow
+When we have a new Lovable task, add a new numbered markdown file in `lovable/tickets` (e.g., `1.md`, `2.md`, ...). Do not create templates. When a ticket is solved, admin will add a `_solved` suffix to the filename.
+
+## 6) Git push access in this environment
+Push access depends on the SSH key stored in this environment. Any Codex session can push only if it runs in the same environment where the key and SSH config exist. This applies to any repo path opened in this environment (for example `/mnt/c/Users/Dell/Documents/VSC/App/newApp`). Removing the key disables push until a new key is added.
+
+## 7) UDO shortcut for execution
+If a message ends with `UDO`, treat it as approval to execute the actions you propose without waiting for a separate confirmation. Always summarize what you did afterward. UDO is more relevant if we debug, and you suggest some CLI commands -> UDO. PA/PAP is for code

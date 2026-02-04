@@ -1,0 +1,33 @@
+test_data_path: ""
+data_root: /root/.cache/kagglehub/competitions/deep-past-initiative-machine-translation
+test_path: test.csv
+
+model_path: /path/to/byt5-checkpoint-or-hf-model
+output_dir: /notebooks/kaggle/Deep-Past-Challenge/outputs
+
+id_col: id
+src_col: transliteration
+src_prefix: "translate Akkadian to English: "
+
+max_length: 512
+batch_size: 8
+num_workers: 4
+
+num_beams: 8
+max_new_tokens: 512
+length_penalty: 1.5
+repetition_penalty: 1.2
+early_stopping: true
+no_repeat_ngram_size: 0
+
+use_mixed_precision: true
+precision: bf16
+use_better_transformer: true
+use_bucket_batching: true
+use_vectorized_postproc: true
+use_adaptive_beams: true
+use_auto_batch_size: false
+
+aggressive_postprocessing: true
+checkpoint_freq: 100
+num_buckets: 4
