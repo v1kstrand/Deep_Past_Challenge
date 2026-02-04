@@ -53,15 +53,19 @@ class TextTranslationDataset(Dataset):
         tokenizer,
         src_col: str,
         tgt_col: str | None,
+        src_prefix: str = "",
         max_source_len: int,
         max_target_len: int,
+        preprocessor=None,
     ):
         self.df = df.reset_index(drop=True)
         self.tokenizer = tokenizer
         self.src_col = src_col
         self.tgt_col = tgt_col
+        self.src_prefix = str(src_prefix or "")
         self.max_source_len = int(max_source_len)
         self.max_target_len = int(max_target_len)
+        self.preprocessor = preprocessor
 
     def __len__(self) -> int:
         return len(self.df)
@@ -69,6 +73,10 @@ class TextTranslationDataset(Dataset):
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         row = self.df.iloc[int(idx)]
         src = str(row[self.src_col])
+        if self.preprocessor is not None:
+            src = self.preprocessor.preprocess_input_text(src)
+        if self.src_prefix:
+            src = f"{self.src_prefix}{src}"
         model_inputs = self.tokenizer(
             src,
             max_length=self.max_source_len,

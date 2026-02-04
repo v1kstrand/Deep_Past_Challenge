@@ -20,6 +20,7 @@ dependencies = [
 
 [project.optional-dependencies]
 comet = ["comet-ml"]
+inference = ["optimum"]
 
 [tool.setuptools.packages.find]
 where = ["."]

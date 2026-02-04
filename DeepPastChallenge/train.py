@@ -20,6 +20,7 @@ from .amp import autocast_context, grad_scaler
 from .config import DEFAULTS, default_num_workers
 from .data import TextTranslationDataset, build_splits
 from .metrics import kaggle_mt_score
+from .textproc import OptimizedPreprocessor
 
 
 @dataclass
@@ -52,22 +53,30 @@ def build_dataloaders(cfg: dict[str, Any], tokenizer, model):
         val_split=float(cfg["val_split"]),
         seed=int(cfg["seed"]),
     )
+    preprocessor = None
+    if bool(cfg.get("preprocess_inputs", True)):
+        preprocessor = OptimizedPreprocessor()
+    src_prefix = str(cfg.get("src_prefix") or "")
 
     train_ds = TextTranslationDataset(
         splits.train,
         tokenizer=tokenizer,
         src_col=str(cfg["src_col"]),
         tgt_col=str(cfg["tgt_col"]),
+        src_prefix=src_prefix,
         max_source_len=int(cfg["max_source_len"]),
         max_target_len=int(cfg["max_target_len"]),
+        preprocessor=preprocessor,
     )
     valid_ds = TextTranslationDataset(
         splits.valid,
         tokenizer=tokenizer,
         src_col=str(cfg["src_col"]),
         tgt_col=str(cfg["tgt_col"]),
+        src_prefix=src_prefix,
         max_source_len=int(cfg["max_source_len"]),
         max_target_len=int(cfg["max_target_len"]),
+        preprocessor=preprocessor,
     )
     test_ds = None
     if splits.test is not None:
@@ -76,8 +85,10 @@ def build_dataloaders(cfg: dict[str, Any], tokenizer, model):
             tokenizer=tokenizer,
             src_col=str(cfg["src_col"]),
             tgt_col=None,
+            src_prefix=src_prefix,
             max_source_len=int(cfg["max_source_len"]),
             max_target_len=int(cfg["max_target_len"]),
+            preprocessor=preprocessor,
         )
 
     collator = DataCollatorForSeq2Seq(tokenizer, model=model, padding=True, return_tensors="pt")
@@ -275,13 +286,15 @@ def run_training(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
             continue
         if epoch % int(cfg.get("eval_every") or 1) != 0:
             continue
+        eval_max_len = cfg.get("val_gen_max_len") or cfg.get("gen_max_len")
+        eval_beams = cfg.get("val_num_beams") or cfg.get("num_beams")
         score = evaluate(
             model,
             tokenizer,
             valid_loader,
             device,
-            gen_max_len=int(cfg["gen_max_len"]),
-            num_beams=int(cfg["num_beams"]),
+            gen_max_len=int(eval_max_len),
+            num_beams=int(eval_beams),
         )
         tqdm.write(f"epoch {epoch} train_loss {train_loss:.4f} score {score:.4f}")
         if score > state.best_score:

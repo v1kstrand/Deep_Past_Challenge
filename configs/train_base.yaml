@@ -1,0 +1,40 @@
+data_root: /root/.cache/kagglehub/competitions/deep-past-initiative-machine-translation
+train_path: train.csv
+test_path: test.csv
+
+id_col: id
+src_col: transliteration
+tgt_col: translation
+
+src_prefix: "translate Akkadian to English: "
+preprocess_inputs: true
+
+val_split: 0.1
+seed: 42
+
+model_name: google/byt5-small
+tokenizer_name: null
+
+max_source_len: 256
+max_target_len: 256
+gen_max_len: 256
+num_beams: 4
+
+# Fast validation decode
+val_gen_max_len: 128
+val_num_beams: 1
+
+device: cuda
+epochs: 3
+batch_size: 8
+lr: 5e-5
+weight_decay: 0.0
+warmup_steps: 0
+grad_clip: 1.0
+trainable_dtype: bf16
+
+log_every: 50
+eval_every: 1
+save_best_only: true
+output_dir: /notebooks/kaggle/Deep-Past-Challenge/outputs
+run_name: dpc_train_base

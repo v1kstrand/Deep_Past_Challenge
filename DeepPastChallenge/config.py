@@ -22,6 +22,8 @@ DEFAULTS: dict[str, Any] = dict(
     id_col="id",
     src_col="transliteration",
     tgt_col="translation",
+    src_prefix="",
+    preprocess_inputs=True,
     val_split=0.1,
     seed=DEFAULT_SEED,
     # Model
@@ -31,6 +33,8 @@ DEFAULTS: dict[str, Any] = dict(
     max_target_len=256,
     gen_max_len=256,
     num_beams=4,
+    val_gen_max_len=None,
+    val_num_beams=None,
     # Training
     device="cuda",
     epochs=3,
