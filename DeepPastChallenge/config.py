@@ -24,6 +24,8 @@ DEFAULTS: dict[str, Any] = dict(
     tgt_col="translation",
     src_prefix="",
     preprocess_inputs=True,
+    use_sentence_aligner=False,
+    align_min_len=3,
     val_split=0.1,
     seed=DEFAULT_SEED,
     # Model

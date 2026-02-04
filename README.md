@@ -20,7 +20,19 @@ Notes:
 - Source preprocessing is enabled by default (`preprocess_inputs=true`).
 - Use `src_prefix` if your model expects a task prefix.
 - Validation decode can be faster with `val_num_beams` and `val_gen_max_len`.
- - Example config: `configs/train_base.yaml`
+- Example config: `configs/train_base.yaml`
+
+## Trainer Baseline
+
+Trainer-based baseline aligned with the Kaggle starter notebook:
+
+```bash
+python DeepPastChallenge/scripts/train_trainer.py --overrides configs/train_trainer_base.yaml
+```
+
+Notes:
+- Uses `datasets` + `evaluate` with chrF metric.
+- Optional `use_sentence_aligner` can be toggled.
 
 ## Inference
 
