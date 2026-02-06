@@ -46,4 +46,4 @@ When we have a new Lovable task, add a new numbered markdown file in `lovable/ti
 Push access depends on the SSH key stored in this environment. Any Codex session can push only if it runs in the same environment where the key and SSH config exist. This applies to any repo path opened in this environment (for example `/mnt/c/Users/Dell/Documents/VSC/App/newApp`). Removing the key disables push until a new key is added.
 
 ## 7) UDO shortcut for execution
-If a message ends with `UDO`, treat it as approval to execute the actions you propose without waiting for a separate confirmation. Always summarize what you did afterward. UDO is more relevant if we debug, and you suggest some CLI commands -> UDO. PA/PAP is for code
+If a message ends with `UDO`, treat it as approval to execute the actions you propose without waiting for a separate confirmation. Always summarize what you did afterward. UDO is if we (for example) debug, and you suggest some CLI commands -> UDO. PA/PAP is for code
