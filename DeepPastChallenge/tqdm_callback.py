@@ -57,15 +57,17 @@ class DPCProgressCallback(ProgressCallback):
         if not metrics:
             return
 
-        # Show key eval metrics on the training bar too.
+        # Show key eval scores on the training bar too (scores only; no timing).
         self._latest.update(
             _pick(
                 metrics,
                 keys=[
-                    "eval_loss",
-                    "eval_chrf",
-                    "eval_runtime",
-                    "epoch",
+                    "eval_bleu_raw",
+                    "eval_chrfpp_raw",
+                    "eval_gm_raw",
+                    "eval_bleu_post",
+                    "eval_chrfpp_post",
+                    "eval_gm_post",
                 ],
             )
         )
@@ -74,4 +76,3 @@ class DPCProgressCallback(ProgressCallback):
                 self.training_bar.set_postfix(self._latest, refresh=False)
             except Exception:
                 pass
-

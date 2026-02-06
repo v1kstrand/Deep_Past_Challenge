@@ -18,12 +18,12 @@ from transformers import (
     Seq2SeqTrainer,
     Seq2SeqTrainingArguments,
 )
-import evaluate
 
 from .config import DEFAULTS
 from .comet_utils import CometHFCallback, maybe_init_comet
+from .metrics import kaggle_scores
 from .tqdm_callback import DPCProgressCallback
-from .textproc import OptimizedPreprocessor
+from .textproc import OptimizedPreprocessor, VectorizedPostprocessor
 
 
 def _training_args_strategy_kwargs(cfg: dict[str, Any]) -> dict[str, Any]:
@@ -129,7 +129,7 @@ def run_training_trainer(overrides: dict[str, Any] | None = None) -> dict[str, A
     tokenized_val = split["test"].map(preprocess_function, batched=True)
 
     data_collator = DataCollatorForSeq2Seq(tokenizer, model=model)
-    metric = evaluate.load("chrf")
+    postprocessor = VectorizedPostprocessor(aggressive=True)
 
     def compute_metrics(eval_preds):
         preds, labels = eval_preds
@@ -138,10 +138,24 @@ def run_training_trainer(overrides: dict[str, Any] | None = None) -> dict[str, A
         decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
         labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
         decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
-        decoded_preds = [pred.strip() for pred in decoded_preds]
-        decoded_labels = [[label.strip()] for label in decoded_labels]
-        result = metric.compute(predictions=decoded_preds, references=decoded_labels)
-        return {"chrf": result["score"]}
+
+        decoded_preds_raw = [pred.strip() for pred in decoded_preds]
+        decoded_refs = [label.strip() for label in decoded_labels]
+
+        decoded_preds_post = postprocessor.postprocess_batch(decoded_preds_raw)
+
+        raw = kaggle_scores(decoded_preds_raw, decoded_refs)
+        post = kaggle_scores(decoded_preds_post, decoded_refs)
+
+        # Return scores only (no runtime/epoch/etc).
+        return {
+            "bleu_raw": raw["bleu"],
+            "chrfpp_raw": raw["chrfpp"],
+            "gm_raw": raw["gm"],
+            "bleu_post": post["bleu"],
+            "chrfpp_post": post["chrfpp"],
+            "gm_post": post["gm"],
+        }
 
     output_dir = str(cfg.get("output_dir") or "./outputs")
     run_name = str(cfg.get("run_name") or "trainer_baseline")
@@ -167,7 +181,7 @@ def run_training_trainer(overrides: dict[str, Any] | None = None) -> dict[str, A
         fp16=fp16,
         bf16=bf16,
         load_best_model_at_end=True,
-        metric_for_best_model="chrf",
+        metric_for_best_model="gm_post",
         greater_is_better=True,
     )
 

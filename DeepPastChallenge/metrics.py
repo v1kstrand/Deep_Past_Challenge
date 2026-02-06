@@ -1,36 +1,38 @@
 from __future__ import annotations
 
 import math
-from typing import Iterable, Sequence
+from typing import Sequence
 
 import sacrebleu
 
 
-def compute_bleu(
-    predictions: Sequence[str],
-    references: Sequence[str],
-) -> float:
-    refs = [list(references)]
-    bleu = sacrebleu.corpus_bleu(predictions, refs)
-    return float(bleu.score)
+def _refs(references: Sequence[str]) -> list[list[str]]:
+    # sacrebleu corpus_* expects list-of-references (list of lists)
+    return [list(references)]
 
 
-def compute_chrf(
-    predictions: Sequence[str],
-    references: Sequence[str],
-) -> float:
-    refs = [list(references)]
-    chrf = sacrebleu.corpus_chrf(predictions, refs)
-    return float(chrf.score)
+def bleu_score(predictions: Sequence[str], references: Sequence[str]) -> float:
+    return float(sacrebleu.corpus_bleu(list(predictions), _refs(references)).score)
 
 
-def kaggle_mt_score(
-    predictions: Sequence[str],
-    references: Sequence[str],
-) -> float:
+def chrfpp_score(predictions: Sequence[str], references: Sequence[str]) -> float:
+    # Official metric notebook uses chrF++ with word_order=2.
+    return float(
+        sacrebleu.corpus_chrf(list(predictions), _refs(references), word_order=2).score
+    )
+
+
+def geometric_mean_bleu_chrfpp(bleu: float, chrfpp: float) -> float:
+    # Scores are 0-100; GM stays on 0-100.
+    return math.sqrt(max(bleu, 0.0) * max(chrfpp, 0.0))
+
+
+def kaggle_scores(predictions: Sequence[str], references: Sequence[str]) -> dict[str, float]:
     """
-    Kaggle metric: geometric mean of BLEU and chrF++ (scores in 0-100 range).
+    Official Kaggle metric for this competition:
+    GM = sqrt(BLEU * chrF++) where BLEU and chrF++ are micro-averaged over the corpus.
     """
-    bleu = compute_bleu(predictions, references)
-    chrf = compute_chrf(predictions, references)
-    return math.sqrt(max(bleu, 0.0) * max(chrf, 0.0))
+    bleu = bleu_score(predictions, references)
+    chrfpp = chrfpp_score(predictions, references)
+    gm = geometric_mean_bleu_chrfpp(bleu, chrfpp)
+    return {"bleu": bleu, "chrfpp": chrfpp, "gm": gm}

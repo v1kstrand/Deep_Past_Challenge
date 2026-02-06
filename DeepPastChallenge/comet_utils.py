@@ -49,9 +49,21 @@ class CometHFCallback(TrainerCallback):
         if not metrics:
             return
         step = int(getattr(state, "global_step", 0) or 0)
+        allowed = {
+            "eval_bleu_raw",
+            "eval_chrfpp_raw",
+            "eval_gm_raw",
+            "eval_bleu_post",
+            "eval_chrfpp_post",
+            "eval_gm_post",
+        }
         out = {}
         for k, v in metrics.items():
-            out[f"eval/{k}"] = v
+            if k not in allowed:
+                continue
+            # Strip the HF "eval_" prefix in Comet for cleaner names.
+            name = k.removeprefix("eval_")
+            out[f"eval/{name}"] = v
         if out:
             try:
                 self.exp.log_metrics(out, step=step)
