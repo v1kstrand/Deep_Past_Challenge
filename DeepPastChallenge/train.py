@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import os
 import re
 from dataclasses import dataclass
@@ -21,6 +22,30 @@ import evaluate
 from .config import DEFAULTS
 from .comet_utils import CometHFCallback, maybe_init_comet
 from .textproc import OptimizedPreprocessor
+
+
+def _training_args_strategy_kwargs(cfg: dict[str, Any]) -> dict[str, Any]:
+    """
+    `transformers` renamed `evaluation_strategy` -> `eval_strategy` in newer versions.
+    Select the supported kwarg at runtime so we work across notebook images.
+    """
+    params = inspect.signature(Seq2SeqTrainingArguments.__init__).parameters
+    eval_val = str(cfg.get("eval_strategy") or "epoch")
+    save_val = str(cfg.get("save_strategy") or "epoch")
+
+    out: dict[str, Any] = {}
+    if "evaluation_strategy" in params:
+        out["evaluation_strategy"] = eval_val
+    elif "eval_strategy" in params:
+        out["eval_strategy"] = eval_val
+    else:
+        raise TypeError("Seq2SeqTrainingArguments does not support eval strategy argument")
+
+    # As of today, `save_strategy` exists in both old and new versions, but guard anyway.
+    if "save_strategy" in params:
+        out["save_strategy"] = save_val
+
+    return out
 
 
 def simple_sentence_aligner(df: pd.DataFrame, *, min_len: int = 3) -> pd.DataFrame:
@@ -124,10 +149,10 @@ def run_training_trainer(overrides: dict[str, Any] | None = None) -> dict[str, A
     eval_max_len = int(cfg.get("val_gen_max_len") or cfg.get("gen_max_len") or max_target_len)
     eval_beams = int(cfg.get("val_num_beams") or cfg.get("num_beams") or 4)
 
+    strategy_kwargs = _training_args_strategy_kwargs(cfg)
     args = Seq2SeqTrainingArguments(
         output_dir=output_dir,
-        evaluation_strategy=str(cfg.get("eval_strategy") or "epoch"),
-        save_strategy=str(cfg.get("save_strategy") or "epoch"),
+        **strategy_kwargs,
         learning_rate=float(cfg.get("lr") or 2e-4),
         per_device_train_batch_size=int(cfg.get("batch_size") or 8),
         per_device_eval_batch_size=int(cfg.get("eval_batch_size") or cfg.get("batch_size") or 8),
