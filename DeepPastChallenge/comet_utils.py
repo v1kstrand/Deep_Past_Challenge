@@ -5,6 +5,53 @@ import os
 from typing import Any
 
 
+class CometHFCallback:
+    """
+    Minimal HuggingFace Trainer callback to forward train/eval logs to Comet.
+    """
+
+    def __init__(self, exp):
+        self.exp = exp
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if not logs:
+            return
+        step = int(getattr(state, "global_step", 0) or 0)
+        out = {}
+        for k, v in logs.items():
+            if k.startswith("eval_"):
+                continue
+            if k in ("total_flos",):
+                continue
+            out[f"train/{k}"] = v
+        if out:
+            try:
+                self.exp.log_metrics(out, step=step)
+            except Exception:
+                for k, v in out.items():
+                    try:
+                        self.exp.log_metric(k, v, step=step)
+                    except Exception:
+                        pass
+
+    def on_evaluate(self, args, state, control, metrics=None, **kwargs):
+        if not metrics:
+            return
+        step = int(getattr(state, "global_step", 0) or 0)
+        out = {}
+        for k, v in metrics.items():
+            out[f"eval/{k}"] = v
+        if out:
+            try:
+                self.exp.log_metrics(out, step=step)
+            except Exception:
+                for k, v in out.items():
+                    try:
+                        self.exp.log_metric(k, v, step=step)
+                    except Exception:
+                        pass
+
+
 def _enabled(cfg: dict[str, Any]) -> bool:
     val = cfg.get("comet_project_name", None)
     if val is None:

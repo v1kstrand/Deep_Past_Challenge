@@ -19,7 +19,7 @@ from transformers import (
 import evaluate
 
 from .config import DEFAULTS
-from .comet_utils import maybe_init_comet
+from .comet_utils import CometHFCallback, maybe_init_comet
 from .textproc import OptimizedPreprocessor
 
 
@@ -147,6 +147,10 @@ def run_training_trainer(overrides: dict[str, Any] | None = None) -> dict[str, A
     if cfg.get("gradient_accumulation_steps"):
         args.gradient_accumulation_steps = int(cfg.get("gradient_accumulation_steps"))
 
+    callbacks = []
+    if exp is not None:
+        callbacks.append(CometHFCallback(exp))
+
     trainer = Seq2SeqTrainer(
         model=model,
         args=args,
@@ -155,6 +159,7 @@ def run_training_trainer(overrides: dict[str, Any] | None = None) -> dict[str, A
         data_collator=data_collator,
         tokenizer=tokenizer,
         compute_metrics=compute_metrics,
+        callbacks=callbacks,
     )
 
     try:
