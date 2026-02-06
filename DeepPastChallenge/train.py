@@ -17,6 +17,7 @@ from transformers import (
 )
 
 from .amp import autocast_context, grad_scaler
+from .comet_utils import maybe_init_comet
 from .config import DEFAULTS, default_num_workers
 from .data import TextTranslationDataset, build_splits
 from .metrics import kaggle_mt_score
@@ -250,6 +251,7 @@ def run_training(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
     if overrides:
         cfg.update(overrides)
 
+    exp = maybe_init_comet(cfg)
     device = _resolve_device(str(cfg.get("device", "cuda")))
     model, tokenizer = build_model_and_tokenizer(cfg)
     model.to(device)
@@ -270,55 +272,74 @@ def run_training(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
 
     os.makedirs(str(cfg["output_dir"]), exist_ok=True)
     state = TrainState()
-    for epoch in range(1, int(cfg["epochs"]) + 1):
-        train_loss = train_one_epoch(
-            model,
-            train_loader,
-            optimizer,
-            scheduler,
-            scaler,
-            device,
-            grad_clip=cfg.get("grad_clip"),
-            log_every=int(cfg.get("log_every") or 0),
-            trainable_dtype=cfg.get("trainable_dtype"),
-        )
-        if int(cfg.get("eval_every") or 1) <= 0:
-            continue
-        if epoch % int(cfg.get("eval_every") or 1) != 0:
-            continue
-        eval_max_len = cfg.get("val_gen_max_len") or cfg.get("gen_max_len")
-        eval_beams = cfg.get("val_num_beams") or cfg.get("num_beams")
-        score = evaluate(
-            model,
-            tokenizer,
-            valid_loader,
-            device,
-            gen_max_len=int(eval_max_len),
-            num_beams=int(eval_beams),
-        )
-        tqdm.write(f"epoch {epoch} train_loss {train_loss:.4f} score {score:.4f}")
-        if score > state.best_score:
-            state.best_score = score
-            state.best_epoch = epoch
-            save_checkpoint(model, tokenizer, str(cfg["output_dir"]), str(cfg["run_name"]), tag="best")
-        if not bool(cfg.get("save_best_only", True)):
-            save_checkpoint(model, tokenizer, str(cfg["output_dir"]), str(cfg["run_name"]), tag=f"epoch_{epoch}")
+    try:
+        for epoch in range(1, int(cfg["epochs"]) + 1):
+            train_loss = train_one_epoch(
+                model,
+                train_loader,
+                optimizer,
+                scheduler,
+                scaler,
+                device,
+                grad_clip=cfg.get("grad_clip"),
+                log_every=int(cfg.get("log_every") or 0),
+                trainable_dtype=cfg.get("trainable_dtype"),
+            )
+            if int(cfg.get("eval_every") or 1) <= 0:
+                continue
+            if epoch % int(cfg.get("eval_every") or 1) != 0:
+                continue
+            eval_max_len = cfg.get("val_gen_max_len") or cfg.get("gen_max_len")
+            eval_beams = cfg.get("val_num_beams") or cfg.get("num_beams")
+            score = evaluate(
+                model,
+                tokenizer,
+                valid_loader,
+                device,
+                gen_max_len=int(eval_max_len),
+                num_beams=int(eval_beams),
+            )
+            tqdm.write(f"epoch {epoch} train_loss {train_loss:.4f} score {score:.4f}")
+            if score > state.best_score:
+                state.best_score = score
+                state.best_epoch = epoch
+                save_checkpoint(
+                    model,
+                    tokenizer,
+                    str(cfg["output_dir"]),
+                    str(cfg["run_name"]),
+                    tag="best",
+                )
+            if not bool(cfg.get("save_best_only", True)):
+                save_checkpoint(
+                    model,
+                    tokenizer,
+                    str(cfg["output_dir"]),
+                    str(cfg["run_name"]),
+                    tag=f"epoch_{epoch}",
+                )
 
-    if test_loader is not None and splits.test is not None:
-        output_path = os.path.join(str(cfg["output_dir"]), str(cfg["run_name"]), "submission.csv")
-        ids = splits.test[str(cfg["id_col"])].tolist()
-        predict_to_csv(
-            model,
-            tokenizer,
-            test_loader,
-            ids,
-            device=device,
-            gen_max_len=int(cfg["gen_max_len"]),
-            num_beams=int(cfg["num_beams"]),
-            output_path=output_path,
-        )
+        if test_loader is not None and splits.test is not None:
+            output_path = os.path.join(str(cfg["output_dir"]), str(cfg["run_name"]), "submission.csv")
+            ids = splits.test[str(cfg["id_col"])].tolist()
+            predict_to_csv(
+                model,
+                tokenizer,
+                test_loader,
+                ids,
+                device=device,
+                gen_max_len=int(cfg["gen_max_len"]),
+                num_beams=int(cfg["num_beams"]),
+                output_path=output_path,
+            )
 
-    return dict(
-        best_score=state.best_score,
-        best_epoch=state.best_epoch,
-    )
+        return dict(
+            best_score=state.best_score,
+            best_epoch=state.best_epoch,
+        )
+    finally:
+        if exp is not None:
+            try:
+                exp.end()
+            except Exception:
+                pass

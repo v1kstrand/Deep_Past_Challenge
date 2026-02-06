@@ -19,6 +19,7 @@ from transformers import (
 import evaluate
 
 from .config import DEFAULTS
+from .comet_utils import maybe_init_comet
 from .textproc import OptimizedPreprocessor
 
 
@@ -62,6 +63,7 @@ def run_training_trainer(overrides: dict[str, Any] | None = None) -> dict[str, A
     if overrides:
         cfg.update(overrides)
 
+    exp = maybe_init_comet(cfg)
     data_root = cfg.get("data_root")
     train_path = _resolve_path(data_root, str(cfg["train_path"]))
     df = pd.read_csv(train_path)
@@ -155,11 +157,17 @@ def run_training_trainer(overrides: dict[str, Any] | None = None) -> dict[str, A
         compute_metrics=compute_metrics,
     )
 
-    train_result = trainer.train()
-    trainer.save_model(output_dir)
-    tokenizer.save_pretrained(output_dir)
-
-    return {
-        "train_runtime": train_result.metrics.get("train_runtime"),
-        "train_samples": train_result.metrics.get("train_samples"),
-    }
+    try:
+        train_result = trainer.train()
+        trainer.save_model(output_dir)
+        tokenizer.save_pretrained(output_dir)
+        return {
+            "train_runtime": train_result.metrics.get("train_runtime"),
+            "train_samples": train_result.metrics.get("train_samples"),
+        }
+    finally:
+        if exp is not None:
+            try:
+                exp.end()
+            except Exception:
+                pass

@@ -38,3 +38,5 @@ eval_every: 1
 save_best_only: true
 output_dir: /notebooks/kaggle/Deep-Past-Challenge/outputs
 run_name: dpc_train_base
+comet_project_name: null
+comet_experiment_key: null

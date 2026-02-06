@@ -8,6 +8,15 @@ Machine translation baseline for the Deep Past Initiative (Akkadian transliterat
 pip install -e .
 ```
 
+## Comet (Optional)
+
+```bash
+pip install -e '.[comet]'
+export COMET_API_KEY='...'
+```
+
+Enable by setting `comet_project_name` in your YAML config. The Comet experiment name is set to `run_name`.
+
 ## Training
 
 Run the training entrypoint from the repo root:

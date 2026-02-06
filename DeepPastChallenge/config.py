@@ -53,6 +53,8 @@ DEFAULTS: dict[str, Any] = dict(
     save_best_only=True,
     output_dir=DEFAULT_OUTPUT_DIR,
     run_name="baseline",
+    comet_project_name=None,
+    comet_experiment_key=None,
 )
 
 

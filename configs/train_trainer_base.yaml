@@ -37,3 +37,5 @@ save_strategy: epoch
 save_total_limit: 2
 output_dir: /notebooks/kaggle/Deep-Past-Challenge/outputs
 run_name: dpc_trainer_base
+comet_project_name: null
+comet_experiment_key: null
