@@ -22,24 +22,13 @@ Enable by setting `comet_project_name` in your YAML config. The Comet experiment
 Run the training entrypoint from the repo root:
 
 ```bash
-python DeepPastChallenge/scripts/train_cv_func.py --overrides /path/to/train.yaml
+python DeepPastChallenge/scripts/train_trainer.py --overrides configs/train_base.yaml
 ```
 
 Notes:
 - Source preprocessing is enabled by default (`preprocess_inputs=true`).
 - Use `src_prefix` if your model expects a task prefix.
 - Validation decode can be faster with `val_num_beams` and `val_gen_max_len`.
-- Example config: `configs/train_base.yaml`
-
-## Trainer Baseline
-
-Trainer-based baseline aligned with the Kaggle starter notebook:
-
-```bash
-python DeepPastChallenge/scripts/train_trainer.py --overrides configs/train_trainer_base.yaml
-```
-
-Notes:
 - Uses `datasets` + `evaluate` with chrF metric.
 - Optional `use_sentence_aligner` can be toggled.
 
@@ -48,7 +37,7 @@ Notes:
 The inference pipeline ports the community notebook optimizations (bucketed batching, adaptive beams, vectorized postprocessing).
 
 ```bash
-python DeepPastChallenge/scripts/infer.py --overrides configs/infer_base.yaml
+python DeepPastChallenge/scripts/infer.py --overrides /path/to/infer.yaml
 ```
 
 Notes:
@@ -58,4 +47,4 @@ Notes:
 ## Layout
 
 - `DeepPastChallenge/` current codebase
-- `DeepPastChallenge/v0/` prior baseline for reference
+- `DeepPastChallenge/deprecated/` deprecated code paths for reference

@@ -1,342 +1,170 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import Any
 
+import numpy as np
 import pandas as pd
 import torch
-from torch.utils.data import DataLoader
-from tqdm.auto import tqdm
+from datasets import Dataset
 from transformers import (
-    AutoConfig,
     AutoModelForSeq2SeqLM,
     AutoTokenizer,
     DataCollatorForSeq2Seq,
-    get_linear_schedule_with_warmup,
+    Seq2SeqTrainer,
+    Seq2SeqTrainingArguments,
 )
+import evaluate
 
-from .amp import autocast_context, grad_scaler
+from .config import DEFAULTS
 from .comet_utils import maybe_init_comet
-from .config import DEFAULTS, default_num_workers
-from .data import TextTranslationDataset, build_splits
-from .metrics import kaggle_mt_score
 from .textproc import OptimizedPreprocessor
 
 
-@dataclass
-class TrainState:
-    best_score: float = -1.0
-    best_epoch: int = -1
+def simple_sentence_aligner(df: pd.DataFrame, *, min_len: int = 3) -> pd.DataFrame:
+    aligned_data: list[dict[str, str]] = []
+    for _, row in df.iterrows():
+        src = str(row["transliteration"])
+        tgt = str(row["translation"])
 
+        tgt_sents = [t.strip() for t in re.split(r"(?<=[.!?])\s+", tgt) if t.strip()]
+        src_lines = [s.strip() for s in src.split("\n") if s.strip()]
 
-def _resolve_device(device: str) -> str:
-    if device.startswith("cuda") and not torch.cuda.is_available():
-        return "cpu"
-    return device
-
-
-def build_model_and_tokenizer(cfg: dict[str, Any]):
-    model_name = str(cfg["model_name"])
-    tokenizer_name = str(cfg.get("tokenizer_name") or model_name)
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_fast=True)
-    config = AutoConfig.from_pretrained(model_name)
-    config.tie_word_embeddings = False
-    model = AutoModelForSeq2SeqLM.from_pretrained(model_name, config=config)
-    return model, tokenizer
-
-
-def build_dataloaders(cfg: dict[str, Any], tokenizer, model):
-    splits = build_splits(
-        train_path=str(cfg["train_path"]),
-        test_path=str(cfg.get("test_path") or ""),
-        data_root=cfg.get("data_root"),
-        val_split=float(cfg["val_split"]),
-        seed=int(cfg["seed"]),
-    )
-    preprocessor = None
-    if bool(cfg.get("preprocess_inputs", True)):
-        preprocessor = OptimizedPreprocessor()
-    src_prefix = str(cfg.get("src_prefix") or "")
-
-    train_ds = TextTranslationDataset(
-        splits.train,
-        tokenizer=tokenizer,
-        src_col=str(cfg["src_col"]),
-        tgt_col=str(cfg["tgt_col"]),
-        src_prefix=src_prefix,
-        max_source_len=int(cfg["max_source_len"]),
-        max_target_len=int(cfg["max_target_len"]),
-        preprocessor=preprocessor,
-    )
-    valid_ds = TextTranslationDataset(
-        splits.valid,
-        tokenizer=tokenizer,
-        src_col=str(cfg["src_col"]),
-        tgt_col=str(cfg["tgt_col"]),
-        src_prefix=src_prefix,
-        max_source_len=int(cfg["max_source_len"]),
-        max_target_len=int(cfg["max_target_len"]),
-        preprocessor=preprocessor,
-    )
-    test_ds = None
-    if splits.test is not None:
-        test_ds = TextTranslationDataset(
-            splits.test,
-            tokenizer=tokenizer,
-            src_col=str(cfg["src_col"]),
-            tgt_col=None,
-            src_prefix=src_prefix,
-            max_source_len=int(cfg["max_source_len"]),
-            max_target_len=int(cfg["max_target_len"]),
-            preprocessor=preprocessor,
-        )
-
-    collator = DataCollatorForSeq2Seq(tokenizer, model=model, padding=True, return_tensors="pt")
-    num_workers = int(cfg.get("num_workers") or default_num_workers())
-    train_loader = DataLoader(
-        train_ds,
-        batch_size=int(cfg["batch_size"]),
-        shuffle=True,
-        num_workers=num_workers,
-        collate_fn=collator,
-    )
-    eval_bs = int(cfg.get("eval_batch_size") or cfg["batch_size"])
-    valid_loader = DataLoader(
-        valid_ds,
-        batch_size=eval_bs,
-        shuffle=False,
-        num_workers=num_workers,
-        collate_fn=collator,
-    )
-    test_loader = None
-    if test_ds is not None:
-        test_loader = DataLoader(
-            test_ds,
-            batch_size=eval_bs,
-            shuffle=False,
-            num_workers=num_workers,
-            collate_fn=collator,
-        )
-
-    return splits, train_loader, valid_loader, test_loader
-
-
-def _decode_labels(tokenizer, labels: torch.Tensor) -> list[str]:
-    labels = labels.clone()
-    labels[labels == -100] = tokenizer.pad_token_id
-    return tokenizer.batch_decode(labels, skip_special_tokens=True)
-
-
-def evaluate(
-    model,
-    tokenizer,
-    data_loader: DataLoader,
-    device: str,
-    *,
-    gen_max_len: int,
-    num_beams: int,
-) -> float:
-    model.eval()
-    preds: list[str] = []
-    refs: list[str] = []
-    with torch.no_grad():
-        for batch in tqdm(data_loader, desc="valid", leave=False):
-            input_ids = batch["input_ids"].to(device)
-            attention_mask = batch.get("attention_mask")
-            if attention_mask is not None:
-                attention_mask = attention_mask.to(device)
-            generated = model.generate(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                max_length=int(gen_max_len),
-                num_beams=int(num_beams),
-            )
-            preds.extend(tokenizer.batch_decode(generated, skip_special_tokens=True))
-            refs.extend(_decode_labels(tokenizer, batch["labels"]))
-    return kaggle_mt_score(preds, refs)
-
-
-def train_one_epoch(
-    model,
-    data_loader: DataLoader,
-    optimizer,
-    scheduler,
-    scaler,
-    device: str,
-    *,
-    grad_clip: float | None,
-    log_every: int,
-    trainable_dtype: str | None,
-) -> float:
-    model.train()
-    total_loss = 0.0
-    step = 0
-    use_amp = scaler.is_enabled() if scaler is not None else False
-    for batch in tqdm(data_loader, desc="train", leave=False):
-        step += 1
-        batch = {k: v.to(device) for k, v in batch.items()}
-        with autocast_context(device, dtype=trainable_dtype):
-            outputs = model(**batch)
-            loss = outputs.loss
-        if not torch.isfinite(loss):
-            tqdm.write("non-finite loss detected; skipping step")
-            optimizer.zero_grad(set_to_none=True)
-            continue
-        if use_amp:
-            scaler.scale(loss).backward()
+        if len(tgt_sents) > 1 and len(tgt_sents) == len(src_lines):
+            for s, t in zip(src_lines, tgt_sents):
+                if len(s) > min_len and len(t) > min_len:
+                    aligned_data.append({"transliteration": s, "translation": t})
         else:
-            loss.backward()
-        if grad_clip is not None:
-            if use_amp:
-                scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), float(grad_clip))
-        step_skipped = False
-        if use_amp:
-            old_scale = scaler.get_scale()
-            scaler.step(optimizer)
-            scaler.update()
-            step_skipped = scaler.get_scale() < old_scale
-        else:
-            optimizer.step()
-        optimizer.zero_grad(set_to_none=True)
-        if scheduler is not None and not step_skipped:
-            scheduler.step()
-        total_loss += float(loss.item())
-        if log_every and step % int(log_every) == 0:
-            avg = total_loss / max(step, 1)
-            tqdm.write(f"step {step} loss {avg:.4f}")
-    return total_loss / max(step, 1)
+            aligned_data.append({"transliteration": src, "translation": tgt})
+    return pd.DataFrame(aligned_data)
 
 
-def save_checkpoint(model, tokenizer, output_dir: str, run_name: str, *, tag: str):
-    path = os.path.join(output_dir, run_name, tag)
-    os.makedirs(path, exist_ok=True)
-    model.save_pretrained(path)
-    tokenizer.save_pretrained(path)
+def _resolve_path(root: str | None, path: str) -> str:
+    if root is None:
+        return path
+    if path.startswith(("~", "/", "\\")):
+        return path
+    return os.path.join(root, path)
 
 
-def predict_to_csv(
-    model,
-    tokenizer,
-    data_loader: DataLoader,
-    ids: Sequence[Any],
-    *,
-    device: str,
-    gen_max_len: int,
-    num_beams: int,
-    output_path: str,
-):
-    model.eval()
-    preds: list[str] = []
-    with torch.no_grad():
-        for batch in tqdm(data_loader, desc="predict", leave=False):
-            input_ids = batch["input_ids"].to(device)
-            attention_mask = batch.get("attention_mask")
-            if attention_mask is not None:
-                attention_mask = attention_mask.to(device)
-            generated = model.generate(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                max_length=int(gen_max_len),
-                num_beams=int(num_beams),
-            )
-            preds.extend(tokenizer.batch_decode(generated, skip_special_tokens=True))
-    out = pd.DataFrame({"id": list(ids), "translation": preds})
-    out.to_csv(output_path, index=False)
+def _dtype_flags(trainable_dtype: str | None) -> tuple[bool, bool]:
+    s = str(trainable_dtype or "").strip().lower()
+    if s in ("bf16", "bfloat16"):
+        return False, True
+    if s in ("fp16", "float16", "half"):
+        return True, False
+    return False, False
 
 
-def run_training(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
+def run_training_trainer(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
     cfg: dict[str, Any] = dict(DEFAULTS)
     if overrides:
         cfg.update(overrides)
 
     exp = maybe_init_comet(cfg)
-    device = _resolve_device(str(cfg.get("device", "cuda")))
-    model, tokenizer = build_model_and_tokenizer(cfg)
-    model.to(device)
+    data_root = cfg.get("data_root")
+    train_path = _resolve_path(data_root, str(cfg["train_path"]))
+    df = pd.read_csv(train_path)
 
-    splits, train_loader, valid_loader, test_loader = build_dataloaders(cfg, tokenizer, model)
-    optimizer = torch.optim.AdamW(
-        model.parameters(),
-        lr=float(cfg["lr"]),
-        weight_decay=float(cfg["weight_decay"]),
-    )
-    total_steps = int(cfg["epochs"]) * max(len(train_loader), 1)
-    scheduler = get_linear_schedule_with_warmup(
-        optimizer,
-        num_warmup_steps=int(cfg["warmup_steps"]),
-        num_training_steps=total_steps,
-    )
-    scaler = grad_scaler(device, dtype=cfg.get("trainable_dtype"))
+    if bool(cfg.get("use_sentence_aligner", False)):
+        min_len = int(cfg.get("align_min_len", 3))
+        df = simple_sentence_aligner(df, min_len=min_len)
 
-    os.makedirs(str(cfg["output_dir"]), exist_ok=True)
-    state = TrainState()
+    dataset = Dataset.from_pandas(df)
+    split = dataset.train_test_split(test_size=float(cfg["val_split"]), seed=int(cfg["seed"]))
+
+    model_name = str(cfg["model_name"])
+    tokenizer_name = str(cfg.get("tokenizer_name") or model_name)
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+
+    preprocessor = OptimizedPreprocessor() if bool(cfg.get("preprocess_inputs", True)) else None
+    src_prefix = str(cfg.get("src_prefix") or "")
+    src_col = str(cfg.get("src_col", "transliteration"))
+    tgt_col = str(cfg.get("tgt_col", "translation"))
+    max_source_len = int(cfg.get("max_source_len") or 512)
+    max_target_len = int(cfg.get("max_target_len") or 512)
+
+    def preprocess_function(examples):
+        inputs = [str(ex) for ex in examples[src_col]]
+        if preprocessor is not None:
+            inputs = preprocessor.preprocess_batch(inputs)
+        inputs = [src_prefix + ex for ex in inputs]
+        targets = [str(ex) for ex in examples[tgt_col]]
+        model_inputs = tokenizer(inputs, max_length=max_source_len, truncation=True)
+        labels = tokenizer(targets, max_length=max_target_len, truncation=True)
+        model_inputs["labels"] = labels["input_ids"]
+        return model_inputs
+
+    tokenized_train = split["train"].map(preprocess_function, batched=True)
+    tokenized_val = split["test"].map(preprocess_function, batched=True)
+
+    data_collator = DataCollatorForSeq2Seq(tokenizer, model=model)
+    metric = evaluate.load("chrf")
+
+    def compute_metrics(eval_preds):
+        preds, labels = eval_preds
+        if isinstance(preds, tuple):
+            preds = preds[0]
+        decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
+        labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
+        decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
+        decoded_preds = [pred.strip() for pred in decoded_preds]
+        decoded_labels = [[label.strip()] for label in decoded_labels]
+        result = metric.compute(predictions=decoded_preds, references=decoded_labels)
+        return {"chrf": result["score"]}
+
+    output_dir = str(cfg.get("output_dir") or "./outputs")
+    run_name = str(cfg.get("run_name") or "trainer_baseline")
+    output_dir = os.path.join(output_dir, run_name)
+
+    fp16, bf16 = _dtype_flags(cfg.get("trainable_dtype"))
+    eval_max_len = int(cfg.get("val_gen_max_len") or cfg.get("gen_max_len") or max_target_len)
+    eval_beams = int(cfg.get("val_num_beams") or cfg.get("num_beams") or 4)
+
+    args = Seq2SeqTrainingArguments(
+        output_dir=output_dir,
+        evaluation_strategy=str(cfg.get("eval_strategy") or "epoch"),
+        save_strategy=str(cfg.get("save_strategy") or "epoch"),
+        learning_rate=float(cfg.get("lr") or 2e-4),
+        per_device_train_batch_size=int(cfg.get("batch_size") or 8),
+        per_device_eval_batch_size=int(cfg.get("eval_batch_size") or cfg.get("batch_size") or 8),
+        num_train_epochs=float(cfg.get("epochs") or 3),
+        predict_with_generate=True,
+        generation_max_length=eval_max_len,
+        generation_num_beams=eval_beams,
+        logging_steps=int(cfg.get("log_every") or 50),
+        save_total_limit=int(cfg.get("save_total_limit") or 2),
+        fp16=fp16,
+        bf16=bf16,
+        load_best_model_at_end=True,
+        metric_for_best_model="chrf",
+        greater_is_better=True,
+    )
+
+    if cfg.get("gradient_accumulation_steps"):
+        args.gradient_accumulation_steps = int(cfg.get("gradient_accumulation_steps"))
+
+    trainer = Seq2SeqTrainer(
+        model=model,
+        args=args,
+        train_dataset=tokenized_train,
+        eval_dataset=tokenized_val,
+        data_collator=data_collator,
+        tokenizer=tokenizer,
+        compute_metrics=compute_metrics,
+    )
+
     try:
-        for epoch in range(1, int(cfg["epochs"]) + 1):
-            train_loss = train_one_epoch(
-                model,
-                train_loader,
-                optimizer,
-                scheduler,
-                scaler,
-                device,
-                grad_clip=cfg.get("grad_clip"),
-                log_every=int(cfg.get("log_every") or 0),
-                trainable_dtype=cfg.get("trainable_dtype"),
-            )
-            if int(cfg.get("eval_every") or 1) <= 0:
-                continue
-            if epoch % int(cfg.get("eval_every") or 1) != 0:
-                continue
-            eval_max_len = cfg.get("val_gen_max_len") or cfg.get("gen_max_len")
-            eval_beams = cfg.get("val_num_beams") or cfg.get("num_beams")
-            score = evaluate(
-                model,
-                tokenizer,
-                valid_loader,
-                device,
-                gen_max_len=int(eval_max_len),
-                num_beams=int(eval_beams),
-            )
-            tqdm.write(f"epoch {epoch} train_loss {train_loss:.4f} score {score:.4f}")
-            if score > state.best_score:
-                state.best_score = score
-                state.best_epoch = epoch
-                save_checkpoint(
-                    model,
-                    tokenizer,
-                    str(cfg["output_dir"]),
-                    str(cfg["run_name"]),
-                    tag="best",
-                )
-            if not bool(cfg.get("save_best_only", True)):
-                save_checkpoint(
-                    model,
-                    tokenizer,
-                    str(cfg["output_dir"]),
-                    str(cfg["run_name"]),
-                    tag=f"epoch_{epoch}",
-                )
-
-        if test_loader is not None and splits.test is not None:
-            output_path = os.path.join(str(cfg["output_dir"]), str(cfg["run_name"]), "submission.csv")
-            ids = splits.test[str(cfg["id_col"])].tolist()
-            predict_to_csv(
-                model,
-                tokenizer,
-                test_loader,
-                ids,
-                device=device,
-                gen_max_len=int(cfg["gen_max_len"]),
-                num_beams=int(cfg["num_beams"]),
-                output_path=output_path,
-            )
-
-        return dict(
-            best_score=state.best_score,
-            best_epoch=state.best_epoch,
-        )
+        train_result = trainer.train()
+        trainer.save_model(output_dir)
+        tokenizer.save_pretrained(output_dir)
+        return {
+            "train_runtime": train_result.metrics.get("train_runtime"),
+            "train_samples": train_result.metrics.get("train_samples"),
+        }
     finally:
         if exp is not None:
             try:

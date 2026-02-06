@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from . import amp, config, data, infer, losses, metrics, textproc, train, train_trainer  # noqa: F401
+from . import amp, comet_utils, config, data, infer, losses, metrics, textproc, train  # noqa: F401
 
 __all__ = [
     "amp",
+    "comet_utils",
     "config",
     "data",
     "infer",
@@ -11,5 +12,4 @@ __all__ = [
     "metrics",
     "textproc",
     "train",
-    "train_trainer",
 ]
