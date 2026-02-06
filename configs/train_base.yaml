@@ -15,19 +15,19 @@ seed: 42
 model_name: google/byt5-small
 tokenizer_name: null
 
-max_source_len: 256
-max_target_len: 256
-gen_max_len: 256
+max_source_len: 512
+max_target_len: 512
+gen_max_len: 512
 num_beams: 4
 
 # Fast validation decode
-val_gen_max_len: 128
+val_gen_max_len: 192
 val_num_beams: 1
 
 device: cuda
-epochs: 3
-batch_size: 8
-lr: 5e-5
+epochs: 5
+batch_size: 64
+lr: 3e-5
 weight_decay: 0.0
 warmup_steps: 0
 grad_clip: 1.0
