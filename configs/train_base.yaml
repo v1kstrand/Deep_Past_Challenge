@@ -1,5 +1,8 @@
-data_root: /root/.cache/kagglehub/competitions/deep-past-initiative-machine-translation
+data_root: /notebooks/kaggle/Deep-Past-Challenge/data
 train_path: train.csv
+test_path: test.csv
+
+id_col: id
 src_col: transliteration
 tgt_col: translation
 
@@ -16,24 +19,29 @@ tokenizer_name: null
 
 max_source_len: 512
 max_target_len: 512
+gen_max_len: 512
 num_beams: 4
 
-# Faster validation decode
+# Fast validation decode
 val_gen_max_len: 256
 val_num_beams: 1
 
 device: cuda
 epochs: 20
-batch_size: 8
-lr: 2e-4
+batch_size: 32
+eval_batch_size: 32
+gradient_accumulation_steps: 1
+lr: 1e-4
 weight_decay: 0.0
+warmup_steps: 0
+grad_clip: 1.0
 trainable_dtype: bf16
 
 log_every: 50
 eval_strategy: epoch
 save_strategy: epoch
-save_total_limit: 2
+save_total_limit: 1
 output_dir: /notebooks/kaggle/Deep-Past-Challenge/outputs
 run_name: train_base
-comet_project_name: null
-comet_experiment_key: null
+comet_project_name: dpcV0
+comet_experiment_key: 
