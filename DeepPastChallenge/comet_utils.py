@@ -5,7 +5,18 @@ import os
 from typing import Any
 
 
-class CometHFCallback:
+try:
+    # Newer transformers expects callbacks to implement the full callback API
+    # (e.g. `on_init_end`), which TrainerCallback provides.
+    from transformers import TrainerCallback  # type: ignore
+except Exception:  # pragma: no cover
+    class TrainerCallback:  # type: ignore
+        # Minimal fallback so this module can still be imported in thin envs.
+        def on_init_end(self, *args, **kwargs):
+            return None
+
+
+class CometHFCallback(TrainerCallback):
     """
     Minimal HuggingFace Trainer callback to forward train/eval logs to Comet.
     """

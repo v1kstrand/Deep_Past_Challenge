@@ -176,15 +176,23 @@ def run_training_trainer(overrides: dict[str, Any] | None = None) -> dict[str, A
     if exp is not None:
         callbacks.append(CometHFCallback(exp))
 
+    # `tokenizer` is deprecated in newer transformers in favor of `processing_class`.
+    trainer_init_params = inspect.signature(Seq2SeqTrainer.__init__).parameters
+    trainer_tok_kwargs: dict[str, Any] = {}
+    if "processing_class" in trainer_init_params:
+        trainer_tok_kwargs["processing_class"] = tokenizer
+    else:
+        trainer_tok_kwargs["tokenizer"] = tokenizer
+
     trainer = Seq2SeqTrainer(
         model=model,
         args=args,
         train_dataset=tokenized_train,
         eval_dataset=tokenized_val,
         data_collator=data_collator,
-        tokenizer=tokenizer,
         compute_metrics=compute_metrics,
         callbacks=callbacks,
+        **trainer_tok_kwargs,
     )
 
     try:
