@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import torch
 from datasets import Dataset
+from transformers.trainer_callback import ProgressCallback
 from transformers import (
     AutoModelForSeq2SeqLM,
     AutoTokenizer,
@@ -21,6 +22,7 @@ import evaluate
 
 from .config import DEFAULTS
 from .comet_utils import CometHFCallback, maybe_init_comet
+from .tqdm_callback import DPCProgressCallback
 from .textproc import OptimizedPreprocessor
 
 
@@ -194,6 +196,13 @@ def run_training_trainer(overrides: dict[str, Any] | None = None) -> dict[str, A
         callbacks=callbacks,
         **trainer_tok_kwargs,
     )
+
+    # Replace HF default progress callback so we can show extra fields in the bar postfix.
+    try:
+        trainer.remove_callback(ProgressCallback)
+    except Exception:
+        pass
+    trainer.add_callback(DPCProgressCallback())
 
     try:
         train_result = trainer.train()
