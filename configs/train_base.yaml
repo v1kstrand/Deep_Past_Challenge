@@ -1,4 +1,4 @@
-data_root: /root/.cache/kagglehub/competitions/deep-past-initiative-machine-translation
+data_root: /notebooks/kaggle/Deep-Past-Challenge/data
 train_path: train.csv
 test_path: test.csv
 
