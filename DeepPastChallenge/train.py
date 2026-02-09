@@ -220,6 +220,22 @@ def run_training_trainer(overrides: dict[str, Any] | None = None) -> dict[str, A
 
     try:
         train_result = trainer.train()
+        # Export an inference-ready folder that includes model + tokenizer.
+        #
+        # Rationale: HF checkpoints may not include tokenizer files, and users often
+        # want a single directory to upload to Kaggle as a Dataset.
+        export_dir = os.path.join(output_dir, "best")
+        os.makedirs(export_dir, exist_ok=True)
+
+        # After `train()` with `load_best_model_at_end=True`, trainer.model is the best model.
+        trainer.save_model(export_dir)
+        tokenizer.save_pretrained(export_dir)
+        try:
+            trainer.model.generation_config.save_pretrained(export_dir)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+        # Keep a copy at the run root too (handy for local debugging).
         trainer.save_model(output_dir)
         tokenizer.save_pretrained(output_dir)
         return {
